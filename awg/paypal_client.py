@@ -1,5 +1,7 @@
 import os
 from pathlib import Path
+import re
+import uuid
 
 import httpx
 from dotenv import load_dotenv
@@ -55,4 +57,80 @@ async def create_invoice_draft(
         )
         if r.is_error:
             raise RuntimeError(f"PayPal invoice error: {r.status_code} {r.text}")
+        return r.json()
+
+_CAPTURE_ID = re.compile(r"[A-Za-z0-9_-]{5,64}")
+
+
+def valid_capture_id(value: str) -> bool:
+    return bool(_CAPTURE_ID.fullmatch(value or ""))
+
+
+async def create_order(amount: str, currency: str = "USD") -> dict:
+    """Create a sandbox order; a test buyer must approve it via the returned link."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        token = await _get_token(client)
+        body = {
+            "intent": "CAPTURE",
+            "purchase_units": [{"amount": {"currency_code": currency, "value": amount}}],
+            "payment_source": {
+                "paypal": {
+                    "experience_context": {
+                        "user_action": "PAY_NOW",
+                        "return_url": "https://example.com/return",
+                        "cancel_url": "https://example.com/cancel",
+                    }
+                }
+            },
+        }
+        r = await client.post(
+            f"{BASE}/v2/checkout/orders",
+            headers={"Authorization": f"Bearer {token}", "PayPal-Request-Id": str(uuid.uuid4())},
+            json=body,
+        )
+        if r.is_error:
+            raise RuntimeError(f"PayPal create order error: {r.status_code} {r.text}")
+        data = r.json()
+        link = next(
+            (l["href"] for l in data.get("links", []) if l.get("rel") in ("payer-action", "approve")),
+            None,
+        )
+        return {"order_id": data["id"], "approve_url": link}
+
+
+async def capture_order(order_id: str) -> dict:
+    async with httpx.AsyncClient(timeout=30) as client:
+        token = await _get_token(client)
+        r = await client.post(
+            f"{BASE}/v2/checkout/orders/{order_id}/capture",
+            headers={"Authorization": f"Bearer {token}"},
+            json={},
+        )
+        if r.is_error:
+            raise RuntimeError(f"PayPal capture error: {r.status_code} {r.text}")
+        cap = r.json()["purchase_units"][0]["payments"]["captures"][0]
+        return {"capture_id": cap["id"], "status": cap["status"], "amount": cap["amount"]}
+
+
+async def refund_capture(
+    capture_id: str, amount: str, currency: str = "USD",
+    note: str = "", request_id: str | None = None,
+) -> dict:
+    if not valid_capture_id(capture_id):
+        raise RuntimeError("Invalid capture id")
+    body = {"amount": {"value": amount, "currency_code": currency}}
+    if note:
+        body["note_to_payer"] = note[:255]
+    async with httpx.AsyncClient(timeout=30) as client:
+        token = await _get_token(client)
+        r = await client.post(
+            f"{BASE}/v2/payments/captures/{capture_id}/refund",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "PayPal-Request-Id": request_id or str(uuid.uuid4()),
+            },
+            json=body,
+        )
+        if r.is_error:
+            raise RuntimeError(f"PayPal refund error: {r.status_code} {r.text}")
         return r.json()

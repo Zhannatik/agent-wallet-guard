@@ -6,12 +6,20 @@ from awg.policy import Policy
 
 PROMPT = """You convert a spending rule written in plain language into JSON.
 Return ONLY a JSON object with exactly these keys:
-- "max_per_tx": number, maximum amount for a single transaction
-- "daily_budget": number, maximum total per day
-- "approval_threshold": number, amounts above this need human approval
+- "max_per_tx": number, maximum amount for a single invoice or payment
+- "daily_budget": number, maximum total of invoices or payments per day
+- "approval_threshold": number, invoice amounts above this need human approval
+- "max_refund": number, maximum amount of a single refund
+- "daily_refund_budget": number, maximum total refunds per day
+- "refund_approval_threshold": number, refund amounts above this need human approval
 - "allowed_recipients": list of email addresses; an empty list means any recipient
 Use null for anything the rule does not mention. All amounts are in USD.
 Rule: <<<{text}>>>"""
+
+_AMOUNT_KEYS = (
+    "max_per_tx", "daily_budget", "approval_threshold",
+    "max_refund", "daily_refund_budget", "refund_approval_threshold",
+)
 
 
 def _amount(value, name: str) -> Decimal:
@@ -19,8 +27,8 @@ def _amount(value, name: str) -> Decimal:
         d = Decimal(str(value))
     except InvalidOperation:
         raise ValueError(f"{name} is not a number: {value!r}")
-    if d <= 0:
-        raise ValueError(f"{name} must be positive")
+    if not d.is_finite() or d <= 0:
+        raise ValueError(f"{name} must be a positive number")
     return d
 
 
@@ -31,8 +39,11 @@ def policy_from_data(data: dict, base: Policy) -> Policy:
         daily_budget=base.daily_budget,
         approval_threshold=base.approval_threshold,
         allowed_recipients=list(base.allowed_recipients),
+        max_refund=base.max_refund,
+        refund_approval_threshold=base.refund_approval_threshold,
+        daily_refund_budget=base.daily_refund_budget,
     )
-    for key in ("max_per_tx", "daily_budget", "approval_threshold"):
+    for key in _AMOUNT_KEYS:
         if data.get(key) is not None:
             setattr(p, key, _amount(data[key], key))
 
@@ -43,8 +54,10 @@ def policy_from_data(data: dict, base: Policy) -> Policy:
         p.allowed_recipients = recipients
 
     if not (p.approval_threshold <= p.max_per_tx <= p.daily_budget):
+        raise ValueError("Inconsistent limits: need approval_threshold <= max_per_tx <= daily_budget")
+    if not (p.refund_approval_threshold <= p.max_refund <= p.daily_refund_budget):
         raise ValueError(
-            "Inconsistent limits: need approval_threshold <= max_per_tx <= daily_budget"
+            "Inconsistent refund limits: need refund_approval_threshold <= max_refund <= daily_refund_budget"
         )
     return p
 

@@ -15,6 +15,9 @@ class Policy:
     daily_budget: Decimal = Decimal("500")
     approval_threshold: Decimal = Decimal("50")
     allowed_recipients: list[str] = field(default_factory=list)  # пусто = любые
+    max_refund: Decimal = Decimal("50")
+    refund_approval_threshold: Decimal = Decimal("20")
+    daily_refund_budget: Decimal = Decimal("100")
 
 
 @dataclass
@@ -23,18 +26,33 @@ class Decision:
     reason: str
 
 
-def evaluate(amount: str, recipient: str, spent_today: Decimal, policy: Policy) -> Decision:
+def _parse(amount: str) -> Decimal | None:
     try:
         value = Decimal(amount)
     except InvalidOperation:
-        return Decision(Verdict.DENY, f"Invalid amount: {amount!r}")
-    if value <= 0:
-        return Decision(Verdict.DENY, "Amount must be positive")
+        return None
+    if not value.is_finite() or value <= 0:
+        return None
+    return value
+
+
+def describe_limits(p: Policy, kind: str = "invoice") -> str:
+    if kind == "refund":
+        return (f"per refund {p.max_refund}, per day {p.daily_refund_budget}, "
+                f"approval above {p.refund_approval_threshold}")
+    return (f"per transaction {p.max_per_tx}, per day {p.daily_budget}, "
+            f"approval above {p.approval_threshold}")
+
+
+def evaluate(amount: str, recipient: str, spent_today: Decimal, policy: Policy) -> Decision:
+    value = _parse(amount)
+    if value is None:
+        return Decision(Verdict.DENY, "Invalid or non-positive amount")
 
     if policy.allowed_recipients and recipient.lower() not in (
         r.lower() for r in policy.allowed_recipients
     ):
-        return Decision(Verdict.DENY, f"Recipient {recipient} is not on the allowed list")
+        return Decision(Verdict.DENY, "Recipient is not on the allowed list")
 
     if value > policy.max_per_tx:
         return Decision(Verdict.DENY, f"{value} exceeds the per-transaction limit of {policy.max_per_tx}")
@@ -50,4 +68,25 @@ def evaluate(amount: str, recipient: str, spent_today: Decimal, policy: Policy) 
 
     return Decision(Verdict.ALLOW, "Within policy")
 
-DEFAULT_POLICY = Policy()
+
+def evaluate_refund(amount: str, refunded_today: Decimal, policy: Policy) -> Decision:
+    value = _parse(amount)
+    if value is None:
+        return Decision(Verdict.DENY, "Invalid or non-positive amount")
+
+    if value > policy.max_refund:
+        return Decision(Verdict.DENY, f"{value} exceeds the per-refund limit of {policy.max_refund}")
+
+    if refunded_today + value > policy.daily_refund_budget:
+        return Decision(
+            Verdict.DENY,
+            f"Daily refund budget of {policy.daily_refund_budget} would be exceeded (refunded {refunded_today})",
+        )
+
+    if value > policy.refund_approval_threshold:
+        return Decision(
+            Verdict.NEEDS_APPROVAL,
+            f"{value} is above the refund approval threshold of {policy.refund_approval_threshold}",
+        )
+
+    return Decision(Verdict.ALLOW, "Within policy")
