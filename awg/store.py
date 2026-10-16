@@ -3,6 +3,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+import json
+from awg.policy import Policy
 
 DB_PATH = Path(__file__).resolve().parents[1] / "awg.db"
 
@@ -26,6 +28,10 @@ def init() -> None:
     with _db() as c:
         c.executescript(
             """
+                        CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS approvals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at TEXT NOT NULL,
@@ -95,3 +101,31 @@ def set_status(approval_id: int, status: str, reason: str) -> None:
             "UPDATE approvals SET status = ?, reason = ?, decided_at = ? WHERE id = ?",
             (status, reason, _now(), approval_id),
         )
+
+def save_policy(p: Policy) -> None:
+    data = {
+        "max_per_tx": str(p.max_per_tx),
+        "daily_budget": str(p.daily_budget),
+        "approval_threshold": str(p.approval_threshold),
+        "allowed_recipients": p.allowed_recipients,
+    }
+    with _db() as c:
+        c.execute(
+            "INSERT INTO settings (key, value) VALUES ('policy', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (json.dumps(data),),
+        )
+
+
+def load_policy() -> Policy:
+    with _db() as c:
+        row = c.execute("SELECT value FROM settings WHERE key = 'policy'").fetchone()
+    if not row:
+        return Policy()
+    d = json.loads(row["value"])
+    return Policy(
+        max_per_tx=Decimal(d["max_per_tx"]),
+        daily_budget=Decimal(d["daily_budget"]),
+        approval_threshold=Decimal(d["approval_threshold"]),
+        allowed_recipients=d["allowed_recipients"],
+    )

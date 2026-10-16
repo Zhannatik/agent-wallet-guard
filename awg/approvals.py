@@ -1,5 +1,5 @@
 from awg import paypal_client, store
-from awg.policy import DEFAULT_POLICY, Verdict, evaluate
+from awg.policy import Verdict, evaluate
 
 
 async def resolve(approval_id: int, approve: bool) -> dict:
@@ -15,7 +15,7 @@ async def resolve(approval_id: int, approve: bool) -> dict:
         return {"status": "rejected"}
 
     # жёсткие лимиты перепроверяются в момент одобрения: "да" человека не обходит бюджет
-    decision = evaluate(a["amount"], a["email"], store.spent_today(), DEFAULT_POLICY)
+    decision = evaluate(a["amount"], a["email"], store.spent_today(), store.load_policy())
     if decision.verdict == Verdict.DENY:
         store.set_status(approval_id, "denied", decision.reason)
         store.log("invoice", a["email"], a["amount"], "denied", decision.reason)
