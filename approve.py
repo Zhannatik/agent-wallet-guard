@@ -11,6 +11,13 @@ def show_policy(p) -> None:
     print(f"  approval above      : {p.approval_threshold}")
     print(f"  allowed recipients  : {p.allowed_recipients or 'any'}")
 
+def show_audit(limit: int = 20) -> None:
+    rows = store.list_audit(limit)
+    if not rows:
+        print("Audit log is empty.")
+    for r in rows:
+        ts = r["ts"][:19].replace("T", " ")
+        print(f"{ts}  {r['verdict']:<15} {r['amount']:>8}  {r['email']}  - {r['reason']}")
 
 async def set_policy(text: str) -> None:
     current = store.load_policy()
@@ -40,8 +47,10 @@ def main() -> None:
         show_policy(store.load_policy())
     elif args[0] == "policy" and len(args) == 2:
         asyncio.run(set_policy(args[1]))
+    elif args[0] == "audit":
+        show_audit()
     else:
-        print('Usage: python approve.py [list | approve <id> | reject <id> | policy ["rule text"]]')
+        print('Usage: python approve.py [list | approve <id> | reject <id> | policy ["rule text"]] | policy ["audit"]] ')
 
 
 if __name__ == "__main__":

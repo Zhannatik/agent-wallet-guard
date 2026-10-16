@@ -129,3 +129,10 @@ def load_policy() -> Policy:
         approval_threshold=Decimal(d["approval_threshold"]),
         allowed_recipients=d["allowed_recipients"],
     )
+
+def list_audit(limit: int = 20) -> list[dict]:
+    with _db() as c:
+        rows = c.execute(
+            "SELECT * FROM audit ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
