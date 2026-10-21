@@ -2,3 +2,4 @@ mcp[cli]>=1.30,<2
 httpx>=0.28
 python-dotenv>=1.0
 pytest>=8
+langfuse>=5,<6

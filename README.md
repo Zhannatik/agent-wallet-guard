@@ -162,6 +162,10 @@ make_test_payment.py  creates a sandbox payment so refunds can be tested
 tests/             unit tests for the policy engine and policy validation
 ```
 
+## Observability (optional)
+If LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are set, every Gemini call (policy parsing and decision explanations) is traced in Langfuse: prompt, model output, model name and latency. PayPal credentials are never sent. Prompts can contain payment amounts and descriptions, so use sandbox data only. Without keys, or if Langfuse is unavailable, the server works exactly as before. Tracing never decides anything: payment decisions are made by the deterministic policy engine.
+
+
 ## Roadmap
 
 - Payout tool guarded by the same policy engine

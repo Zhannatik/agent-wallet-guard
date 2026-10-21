@@ -1,6 +1,6 @@
 import asyncio
 import sys
-
+from awg import llm
 from awg import approvals, store
 from awg.policy_nl import parse_policy
 
@@ -59,4 +59,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        llm.flush()
