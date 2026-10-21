@@ -173,6 +173,9 @@ If LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are set, every Gemini call (polic
 - Per-agent identities and separate budgets
 - Anomaly detection on agent spending patterns
 
+## Video
+https://youtu.be/HF1JpJWjmqo
+
 ## License
 
 MIT
